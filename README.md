@@ -1,3 +1,13 @@
+---
+title: My-AI
+emoji: 🧠
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # My-AI
 
 Your very own AI, built from scratch. No OpenAI, no Claude API, no Llama, no
@@ -51,6 +61,39 @@ Two ways to keep it learning while you're away:
 - `data/chats.jsonl`      — every conversation, appended forever
 - `data/shape_examples/`  — shapes you've drawn + labels
 - `weights/`              — saved model weights
+
+## Use it from your phone (free hosting)
+
+### Option A — Hugging Face Spaces (recommended, fully free, always-on)
+1. Go to https://huggingface.co/new-space
+2. Name it `my-ai`, choose **Docker** as the SDK, visibility = whatever you want.
+3. After creation, on the Space page click **"Files" → "Add → Upload files"**, OR run:
+   ```bash
+   git remote add hf https://huggingface.co/spaces/<your-username>/my-ai
+   git push hf claude/custom-ai-chatbot-shapes-RzImY:main
+   ```
+4. Wait ~5 min for the build. You'll get a public URL like
+   `https://<you>-my-ai.hf.space` — open that on your phone.
+
+### Option B — Fly.io (free tier, always-on small VM)
+```bash
+brew install flyctl   # or: curl -L https://fly.io/install.sh | sh
+fly auth signup
+fly launch --no-deploy --copy-config --name my-ai
+fly volumes create myai_data --region iad --size 1
+fly deploy
+```
+Public URL: `https://my-ai.fly.dev`.
+
+### Option C — Render (free, sleeps after 15 min idle)
+1. Push this repo to GitHub.
+2. https://render.com → **New → Web Service** → connect repo.
+3. Environment: **Docker**. Plan: **Free**. Click Create.
+
+### Why not Netlify / Vercel?
+They only run serverless functions (10-second limit, no persistent disk,
+~250MB code cap). PyTorch is ~200MB on its own and the chat brain takes
+longer than 10 seconds during training — so they don't fit.
 
 ## Honest expectations
 
