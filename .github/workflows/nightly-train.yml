@@ -33,7 +33,11 @@ jobs:
         run: |
           git config user.name "my-ai-trainer"
           git config user.email "my-ai-trainer@users.noreply.github.com"
-          git add weights/ data/ || true
+          # Force-add because weights/*.pt and weights/*.json are gitignored
+          # (so local testing doesn't pollute commits) but the trained
+          # weights from this CI run ARE what we want to persist.
+          git add -f weights/chat_brain.pt weights/shape_brain.pt weights/tokenizer.json 2>/dev/null || true
+          git add data/shape_examples/ 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "no changes"
           else

@@ -8,3 +8,12 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Generated training artifacts — recreated by build/train scripts
+weights/*.pt
+weights/*.json
+data/chats.jsonl
+data/shape_examples/*/
+!weights/.gitkeep
+!data/.gitkeep
+!data/shape_examples/.gitkeep
