@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0e0f13">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="My-AI">
+<title>My-AI</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { overscroll-behavior: none; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0e0f13; color: #e8e8ee; margin: 0; }
+  header { padding: 14px 18px; border-bottom: 1px solid #23252d; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+  h1 { margin: 0; font-size: 18px; }
+  .badge { font-size: 11px; background: #1f2230; padding: 4px 10px; border-radius: 12px; color: #9aa0b3; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px; max-width: 1100px; margin: 0 auto; }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; padding: 12px; gap: 14px; }
+    h1 { font-size: 16px; }
+    #status { font-size: 11px; padding: 4px 0; width: 100%; }
+    #chat-log { height: 50vh; }
+    canvas { width: 100% !important; height: auto !important; max-width: 320px; aspect-ratio: 1/1; }
+  }
+  .panel { background: #14161d; border: 1px solid #23252d; border-radius: 12px; padding: 16px; }
+  .panel h2 { margin: 0 0 12px 0; font-size: 16px; color: #c9ccdb; }
+  #chat-log { height: 360px; overflow-y: auto; background: #0b0c11; border-radius: 8px; padding: 12px; font-size: 15px; line-height: 1.5; -webkit-overflow-scrolling: touch; }
+  .msg { margin: 8px 0; }
+  .me { color: #93c5fd; }
+  .ai { color: #c4f0c5; }
+  .sys { color: #9aa0b3; font-style: italic; font-size: 12px; }
+  #chat-form { display: flex; gap: 8px; margin-top: 12px; }
+  input[type=text], textarea { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #2a2d3a; background: #0b0c11; color: #e8e8ee; font-size: 16px; }
+  button { padding: 12px 16px; border-radius: 8px; border: 1px solid #2a2d3a; background: #1f2230; color: #e8e8ee; cursor: pointer; font-size: 15px; min-height: 44px; }
+  button:hover { background: #2a2d3a; }
+  button.primary { background: #2563eb; border-color: #2563eb; }
+  button.primary:hover { background: #1d4ed8; }
+  canvas { background: #000; border-radius: 8px; cursor: crosshair; display: block; margin: 0 auto; touch-action: none; }
+  .canvas-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  #predict-result { font-size: 14px; color: #c9ccdb; min-height: 24px; text-align: center; }
+  .teach-row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .teach-row button { font-size: 12px; padding: 6px 10px; }
+  #status { font-size: 12px; color: #9aa0b3; padding: 8px 12px; }
+  .correct-row { display: flex; gap: 6px; margin-top: 6px; }
+  .correct-row input { flex: 1; font-size: 12px; padding: 6px 8px; }
+  .correct-row button { font-size: 12px; padding: 6px 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>My-AI <span class="badge">your own tiny model</span></h1>
+  <div id="status">loading...</div>
+</header>
+<main>
+  <section class="panel">
+    <h2>Chat</h2>
+    <div id="chat-log"></div>
+    <form id="chat-form">
+      <input id="chat-input" type="text" autocomplete="off" placeholder="say something..." />
+      <button type="submit" class="primary">Send</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Draw a shape</h2>
+    <div class="canvas-wrap">
+      <canvas id="pad" width="256" height="256"></canvas>
+      <div class="controls">
+        <button id="btn-clear">Clear</button>
+        <button id="btn-predict" class="primary">Guess</button>
+      </div>
+      <div id="predict-result">draw a shape and click Guess</div>
+      <div class="teach-row" id="teach-row">
+        <span style="color:#9aa0b3;font-size:12px;align-self:center;">teach me it was:</span>
+        {% for c in shape_classes %}<button data-label="{{ c }}">{{ c }}</button>{% endfor %}
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+const log = document.getElementById('chat-log');
+const form = document.getElementById('chat-form');
+const input = document.getElementById('chat-input');
+
+function addMsg(who, text, cls) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + cls;
+  div.innerHTML = `<b>${who}:</b> ${escapeHtml(text)}`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+let lastUserMsg = '';
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  addMsg('you', text, 'me');
+  lastUserMsg = text;
+  const r = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text})});
+  const data = await r.json();
+  const msgDiv = addMsg('my-ai', data.reply || data.error || '?', 'ai');
+
+  // Add a "correct me" row so the user can teach a better reply.
+  const correctRow = document.createElement('div');
+  correctRow.className = 'correct-row';
+  correctRow.innerHTML = `<input type="text" placeholder="teach a better reply (optional)"><button>Save</button>`;
+  msgDiv.appendChild(correctRow);
+  const [corrInput, corrBtn] = correctRow.children;
+  corrBtn.addEventListener('click', async () => {
+    const correct = corrInput.value.trim();
+    if (!correct) return;
+    await fetch('/api/chat/feedback', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({user: text, correct})});
+    correctRow.innerHTML = '<span class="sys">saved — i\'ll learn this next training round</span>';
+    refreshStatus();
+  });
+  refreshStatus();
+});
+
+// --- Drawing pad ---
+const canvas = document.getElementById('pad');
+const ctx = canvas.getContext('2d');
+let drawing = false;
+
+function clearPad() {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 12;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+}
+clearPad();
+
+function posOf(e) {
+  const r = canvas.getBoundingClientRect();
+  const t = e.touches ? e.touches[0] : e;
+  return {x: (t.clientX - r.left) * (canvas.width / r.width), y: (t.clientY - r.top) * (canvas.height / r.height)};
+}
+function start(e) { drawing = true; const p = posOf(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); e.preventDefault(); }
+function move(e) { if (!drawing) return; const p = posOf(e); ctx.lineTo(p.x, p.y); ctx.stroke(); e.preventDefault(); }
+function stop() { drawing = false; }
+canvas.addEventListener('mousedown', start);
+canvas.addEventListener('mousemove', move);
+window.addEventListener('mouseup', stop);
+canvas.addEventListener('touchstart', start);
+canvas.addEventListener('touchmove', move);
+canvas.addEventListener('touchend', stop);
+
+document.getElementById('btn-clear').addEventListener('click', clearPad);
+
+document.getElementById('btn-predict').addEventListener('click', async () => {
+  const dataUrl = canvas.toDataURL('image/png');
+  const r = await fetch('/api/shape/predict', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({image: dataUrl})});
+  const data = await r.json();
+  const el = document.getElementById('predict-result');
+  if (data.error) { el.textContent = data.error; return; }
+  el.textContent = `i think it's a ${data.label} (${(data.confidence*100).toFixed(0)}%)`;
+});
+
+document.querySelectorAll('#teach-row button').forEach(b => {
+  b.addEventListener('click', async () => {
+    const dataUrl = canvas.toDataURL('image/png');
+    const label = b.dataset.label;
+    const r = await fetch('/api/shape/teach', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({image: dataUrl, label})});
+    const data = await r.json();
+    document.getElementById('predict-result').textContent = data.ok ? `taught: it was a ${label}` : (data.error || 'error');
+    refreshStatus();
+  });
+});
+
+async function refreshStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const s = await r.json();
+    const shapeStr = Object.entries(s.shape_examples || {}).map(([k,v]) => `${k}:${v}`).join(' ');
+    document.getElementById('status').textContent =
+      `chats logged: ${s.chats_logged} | shape examples: ${shapeStr || 'none'}`;
+  } catch {}
+}
+refreshStatus();
+
+addMsg('system', 'hi! i\'m a tiny ai brain that lives on your machine. chat with me below, and draw shapes on the right.', 'sys');
+</script>
+</body>
+</html>
