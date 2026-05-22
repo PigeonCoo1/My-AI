@@ -4,6 +4,8 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -14,7 +16,7 @@ from flask import Flask, jsonify, render_template, request
 from PIL import Image
 
 from .chat import ChatRunner
-from .paths import CHATS_JSONL, SHAPE_EXAMPLES_DIR, SHAPE_MODEL_PT, ensure_dirs
+from .paths import CHATS_JSONL, SHAPE_EXAMPLES_DIR, SHAPE_MODEL_PT, CHAT_MODEL_PT, ensure_dirs
 from .shape_model import SHAPE_CLASSES, ShapeBrain, ShapeConfig
 from .shape_synth import IMG
 
@@ -182,9 +184,38 @@ def _decode_image(b64: str) -> Image.Image | None:
         return None
 
 
+def _maybe_seed_in_background() -> None:
+    """If no weights exist yet, train a quick seed model so the app actually works."""
+    if CHAT_MODEL_PT.exists() and SHAPE_MODEL_PT.exists():
+        return
+
+    def _run() -> None:
+        try:
+            if not CHAT_MODEL_PT.exists():
+                print("[startup] no chat weights — training seed model in background...")
+                from .train_chat import train as train_chat
+                train_chat(steps=400, seed=True, batch_size=32, lr=3e-4)
+                _reset_models()
+            if not SHAPE_MODEL_PT.exists():
+                print("[startup] no shape weights — training shape model in background...")
+                from .train_shapes import train as train_shapes
+                train_shapes(steps=600, batch_size=64, lr=1e-3)
+                _reset_models()
+        except Exception as e:
+            print(f"[startup] seed training failed: {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+# Triggered on module import — covers both `python -m myai.app` and any
+# WSGI server (gunicorn, etc.) that imports `myai.app:app`.
+ensure_dirs()
+_maybe_seed_in_background()
+
+
 def main() -> None:
-    ensure_dirs()
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=False)
 
 
 if __name__ == "__main__":
